@@ -24,8 +24,8 @@ export function CustomerMenu() {
 
   useEffect(() => {
     (async () => {
-      // Fetch table by id (public read)
-      const { data: tbl } = await supabase.from("restaurant_tables").select("*").eq("id", tableId).maybeSingle();
+      // Fetch table by its public QR token
+      const { data: tbl } = await supabase.from("restaurant_tables").select("*").eq("qr_token", tableId).maybeSingle();
       if (!tbl) { setLoading(false); return; }
       setTable(tbl as RestaurantTable);
       const rid = (tbl as RestaurantTable).restaurant_id;
