@@ -162,9 +162,26 @@ export function OrderTracking() {
 
   useEffect(() => {
     if (!orderId) return;
-    const channel = supabase.channel(`track_${orderId}`).on("postgres_changes", { event: "UPDATE", schema: "public", table: "orders", filter: `id=eq.${orderId}` }, () => {
-      supabase.rpc("get_order_for_customer", { p_order_id: orderId, p_token: token }).then(({ data }) => { if (data && data[0]) setOrder(data[0]); });
-    }).subscribe();
+    const channel = supabase
+      .channel(`order:${orderId}:${token}`, { config: { private: true } })
+      .on("broadcast", { event: "order_status" }, ({ payload }) => {
+        const status = payload.status;
+        if (typeof status !== "string" || !Object.prototype.hasOwnProperty.call(ORDER_STATUS_LABEL, status)) return;
+        setOrder((current: typeof order) => current ? { ...current, status } : current);
+      })
+      .subscribe((status, error) => {
+        if (status === "SUBSCRIBED") {
+          supabase.rpc("get_order_for_customer", { p_order_id: orderId, p_token: token }).then(({ data, error: refreshError }) => {
+            if (refreshError) {
+              console.error("Failed to refresh customer order status", refreshError);
+              return;
+            }
+            if (data?.[0]) setOrder(data[0]);
+          });
+        } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          console.error("Customer order status realtime subscription failed", error);
+        }
+      });
     return () => { supabase.removeChannel(channel); };
   }, [orderId, token]);
 
