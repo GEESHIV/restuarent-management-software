@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Plus, Pencil, Trash2, BookOpen, ToggleLeft, ToggleRight } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
@@ -55,7 +55,9 @@ export function OwnerMenu() {
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {filtered.map((item) => (
             <div key={item.id} className={`flex gap-3 rounded-2xl border bg-white p-4 shadow-sm transition hover:shadow-md ${item.is_available ? "border-stone-200" : "border-stone-200 opacity-60"}`}>
-              <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-xl bg-stone-100 text-3xl">{item.emoji}</div>
+              <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl bg-stone-100 text-3xl">
+                {item.image_url ? <img src={item.image_url} alt={item.name} className="h-full w-full object-cover" /> : item.emoji}
+              </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2"><VegMark isVeg={item.is_veg} /><h3 className="truncate font-semibold text-stone-900">{item.name}</h3></div>
                 <p className="mt-0.5 line-clamp-2 text-xs text-stone-500">{item.description}</p>
@@ -88,7 +90,7 @@ function MenuItemForm({ item, categories, restaurantId, currency, onClose, onSav
   const [categoryId, setCategoryId] = useState(item?.category_id ?? categories[0]?.id ?? "");
   const [isVeg, setIsVeg] = useState(item?.is_veg ?? true);
   const [isAvailable, setIsAvailable] = useState(item?.is_available ?? true);
-  const [emoji, setEmoji] = useState(item?.emoji ?? "🍽️");
+  const [imageUrl, setImageUrl] = useState(item?.image_url ?? "");
   const [saving, setSaving] = useState(false);
   const [showCatForm, setShowCatForm] = useState(false);
   const [newCat, setNewCat] = useState("");
@@ -102,8 +104,27 @@ function MenuItemForm({ item, categories, restaurantId, currency, onClose, onSav
   async function save(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim() || !price) { onNotify("Name and price are required", "error"); return; }
+    const trimmedImageUrl = imageUrl.trim();
+    if (trimmedImageUrl) {
+      try {
+        const parsedUrl = new URL(trimmedImageUrl);
+        if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") throw new Error();
+      } catch {
+        onNotify("Enter a valid HTTP or HTTPS image URL", "error");
+        return;
+      }
+    }
     setSaving(true);
-    const payload = { restaurant_id: restaurantId, category_id: categoryId || null, name: name.trim(), description: description.trim() || null, price: Number(price), is_veg: isVeg, is_available: isAvailable, emoji: emoji || "🍽️" };
+    const payload = {
+      restaurant_id: restaurantId,
+      category_id: categoryId || null,
+      name: name.trim(),
+      description: description.trim() || null,
+      price: Number(price),
+      is_veg: isVeg,
+      is_available: isAvailable,
+      image_url: trimmedImageUrl || null,
+    };
     const { error } = item ? await supabase.from("menu_items").update(payload).eq("id", item.id) : await supabase.from("menu_items").insert(payload);
     setSaving(false);
     if (error) { onNotify(error.message, "error"); return; }
@@ -113,10 +134,8 @@ function MenuItemForm({ item, categories, restaurantId, currency, onClose, onSav
   return (
     <Modal open onClose={onClose} title={item ? "Edit menu item" : "Add menu item"}>
       <form onSubmit={save} className="space-y-4">
-        <div className="flex gap-3">
-          <div className="w-20"><Field label="Icon"><Input value={emoji} onChange={(e) => setEmoji(e.target.value)} maxLength={2} className="text-center text-2xl" /></Field></div>
-          <div className="flex-1"><Field label="Dish name"><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Butter Paneer" /></Field></div>
-        </div>
+        <Field label="Dish name"><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Butter Paneer" /></Field>
+        <Field label="Food image URL (optional)"><Input type="url" value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} placeholder="https://example.com/food-image.jpg" /></Field>
         <Field label="Description"><Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} placeholder="Short description of the dish" /></Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label={`Price (${currency})`}><Input type="number" step="0.01" min="0" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="0.00" /></Field>
