@@ -1,0 +1,10 @@
+project_id = "hagzbxunslvbpxbtunwj"
+
+[functions.seed-demo]
+verify_jwt = false
+
+[functions.register-owner]
+verify_jwt = false
+
+[functions.create-staff]
+verify_jwt = false

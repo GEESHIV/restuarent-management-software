@@ -1,0 +1,17 @@
+{
+  "projectId": "73079808",
+  "functions": {
+    "register-owner": {
+      "hasChanged": false,
+      "hash": "a3502a79699e770de82462af147a3a9b6bee232c830a1aafc0d7f7ae74cf75c6"
+    },
+    "seed-demo": {
+      "hasChanged": false,
+      "hash": "c40af016b1beda0dd8aa92c5f9a6535dc3205a89cb740291213b88926bcae182"
+    },
+    "create-staff": {
+      "hasChanged": false,
+      "hash": "b02bbb0d3a73375706c088b5c81eb38e353c4d5714b19a3df75ac1657c1e80fb"
+    }
+  }
+}
