@@ -56,14 +56,18 @@ export function CustomerMenu() {
   async function placeOrder() {
     if (!table || !restaurant || Object.keys(cart).length === 0) return;
     setPlacing(true);
-    const { data: order, error } = await supabase.from("orders").insert({
+    const newOrderId = crypto.randomUUID();
+    const accessToken = crypto.randomUUID();
+    const { error } = await supabase.from("orders").insert({
+      id: newOrderId,
+      access_token: accessToken,
       restaurant_id: restaurant.id, table_id: table.id, order_type: "dine_in", order_channel: "qr",
       status: "pending", subtotal: totals.subtotal, tax_amount: totals.tax_amount, service_charge: totals.service_charge,
       total: totals.total, item_count: totalItems, payment_status: "unpaid",
-    }).select("id,access_token").single();
-    if (error || !order) { setPlacing(false); notify(error?.message || "Failed to place order", "error"); return; }
+    });
+    if (error) { setPlacing(false); notify(error.message, "error"); return; }
     const newItems = Object.values(cart).map(({ item, qty, note }) => ({
-      order_id: order.id, restaurant_id: restaurant.id, menu_item_id: item.id,
+      order_id: newOrderId, restaurant_id: restaurant.id, menu_item_id: item.id,
       name: item.name, price: Number(item.price), quantity: qty, is_veg: item.is_veg, emoji: item.emoji,
       special_instructions: note || null, status: "pending" as const,
     }));
@@ -71,7 +75,7 @@ export function CustomerMenu() {
     if (ie) { setPlacing(false); notify(ie.message, "error"); return; }
     await supabase.from("restaurant_tables").update({ status: "occupied" }).eq("id", table.id);
     setPlacing(false);
-    navigate(`/track/${order.id}/${order.access_token}`);
+    navigate(`/track/${newOrderId}/${accessToken}`);
   }
 
   if (loading) return <div className="flex min-h-screen items-center justify-center bg-stone-50"><p className="text-stone-400">Loading menu…</p></div>;
