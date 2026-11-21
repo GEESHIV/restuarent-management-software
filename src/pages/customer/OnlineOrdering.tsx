@@ -6,7 +6,7 @@ import { Button, Field, Input, Textarea, VegMark, EmptyState, Select } from "@/c
 import { useToast } from "@/components/Toast";
 import { computeTotals, formatMoney, timeAgo } from "@/lib/format";
 import { ORDER_STATUS_LABEL } from "@/lib/status";
-import { getMenuItemPrice, hasMenuSizes, MENU_SIZES, menuSizeLabel } from "@/lib/menuPricing";
+import { getMenuItemPrice, getMenuSizes, hasMenuSizes, menuSizeLabel } from "@/lib/menuPricing";
 import type { MenuItem, Category, Restaurant, Order, OrderItem, MenuSize } from "@/types";
 
 type OrderMode = "takeaway" | "delivery";
@@ -52,7 +52,8 @@ export function OnlineOrdering() {
   const totalItems = Object.values(cart).reduce((s, c) => s + c.qty, 0);
 
   function addToCart(item: MenuItem) {
-    const size = hasMenuSizes(item) ? selectedSizes[item.id] ?? "small" : null;
+    const availableSizes = getMenuSizes(item);
+    const size = availableSizes.length > 0 ? selectedSizes[item.id] ?? availableSizes[0] : null;
     setCart((c) => { const ex = c[item.id]; return { ...c, [item.id]: { item, qty: (ex?.qty ?? 0) + 1, note: ex?.note ?? "", size } }; });
   }
   function changeSize(item: MenuItem, size: MenuSize) {
@@ -127,18 +128,19 @@ export function OnlineOrdering() {
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2"><VegMark isVeg={item.is_veg} /><p className="truncate font-medium text-stone-900">{item.name}</p></div>
+                {item.is_bestseller && <span className="mt-1 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700">Bestseller</span>}
                 {item.description && <p className="mt-0.5 line-clamp-1 text-xs text-stone-500">{item.description}</p>}
                 <p className="mt-1 text-sm font-semibold text-emerald-700">
-                  {hasMenuSizes(item) ? `From ${formatMoney(getMenuItemPrice(item, "small"), currency)}` : formatMoney(item.price, currency)}
+                  {hasMenuSizes(item) ? `From ${formatMoney(getMenuItemPrice(item, getMenuSizes(item)[0]), currency)}` : formatMoney(item.price, currency)}
                 </p>
                 {hasMenuSizes(item) && (
                   <Select
-                    value={inCart?.size ?? selectedSizes[item.id] ?? "small"}
+                    value={inCart?.size ?? selectedSizes[item.id] ?? getMenuSizes(item)[0]}
                     onChange={(e) => changeSize(item, e.target.value as MenuSize)}
                     className="mt-1.5 py-1.5 text-xs"
                     aria-label={`Choose size for ${item.name}`}
                   >
-                    {MENU_SIZES.map((size) => (
+                    {getMenuSizes(item).map((size) => (
                       <option key={size} value={size}>{menuSizeLabel(size)} — {formatMoney(getMenuItemPrice(item, size), currency)}</option>
                     ))}
                   </Select>

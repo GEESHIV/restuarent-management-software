@@ -10,7 +10,7 @@ import { Badge, Button, EmptyState, Field, Textarea, VegMark, Select } from "@/c
 import { useToast } from "@/components/Toast";
 import { TABLE_STATUS_LABEL, TABLE_STATUS_COLOR, ORDER_STATUS_LABEL, ORDER_STATUS_COLOR } from "@/lib/status";
 import { formatMoney, computeTotals, timeAgo, elapsedMin } from "@/lib/format";
-import { getMenuItemPrice, hasMenuSizes, MENU_SIZES, menuSizeLabel } from "@/lib/menuPricing";
+import { getMenuItemPrice, getMenuSizes, hasMenuSizes, menuSizeLabel } from "@/lib/menuPricing";
 import type { MenuItem, MenuSize, Order, OrderItem, Restaurant, RestaurantTable } from "@/types";
 
 export function WaiterTables() {
@@ -95,7 +95,8 @@ function TakeOrderModal({ table, restaurantId, currency, gstPercentage, serviceP
   const totalItems = Object.values(cart).reduce((s, c) => s + c.qty, 0);
 
   function addToCart(item: MenuItem) {
-    const size = hasMenuSizes(item) ? selectedSizes[item.id] ?? "small" : null;
+    const availableSizes = getMenuSizes(item);
+    const size = availableSizes.length > 0 ? selectedSizes[item.id] ?? availableSizes[0] : null;
     setCart((c) => { const ex = c[item.id]; return { ...c, [item.id]: { item, qty: (ex?.qty ?? 0) + 1, note: ex?.note ?? "", size } }; });
   }
   function changeSize(item: MenuItem, size: MenuSize) {
@@ -152,15 +153,15 @@ function TakeOrderModal({ table, restaurantId, currency, gstPercentage, serviceP
                   <span className="text-2xl">{item.emoji}</span>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2"><VegMark isVeg={item.is_veg} /><p className="truncate text-sm font-medium text-stone-900">{item.name}</p></div>
-                    <p className="text-xs text-stone-500">{formatMoney(getMenuItemPrice(item, inCart?.size ?? (hasMenuSizes(item) ? selectedSizes[item.id] ?? "small" : null)), currency)}</p>
+                    <p className="text-xs text-stone-500">{formatMoney(getMenuItemPrice(item, inCart?.size ?? (hasMenuSizes(item) ? selectedSizes[item.id] ?? getMenuSizes(item)[0] : null)), currency)}</p>
                     {hasMenuSizes(item) && (
                       <Select
-                        value={inCart?.size ?? selectedSizes[item.id] ?? "small"}
+                        value={inCart?.size ?? selectedSizes[item.id] ?? getMenuSizes(item)[0]}
                         onChange={(e) => changeSize(item, e.target.value as MenuSize)}
                         className="mt-1 py-1 text-xs"
                         aria-label={`Choose size for ${item.name}`}
                       >
-                        {MENU_SIZES.map((size) => (
+                        {getMenuSizes(item).map((size) => (
                           <option key={size} value={size}>{menuSizeLabel(size)} — {formatMoney(getMenuItemPrice(item, size), currency)}</option>
                         ))}
                       </Select>

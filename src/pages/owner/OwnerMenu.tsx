@@ -8,8 +8,8 @@ import { Modal } from "@/components/Modal";
 import { Badge, Button, EmptyState, Field, Input, Select, Textarea, VegMark } from "@/components/ui";
 import { useToast } from "@/components/Toast";
 import { formatMoney } from "@/lib/format";
-import { hasMenuSizes, MENU_SIZES, menuSizeLabel } from "@/lib/menuPricing";
-import type { Category, MenuItem, MenuSize } from "@/types";
+import { HALF_FULL_SIZES, hasMenuSizes, MENU_SIZES, menuSizeLabel } from "@/lib/menuPricing";
+import type { Category, MenuItem, MenuSize, MenuSizeOption } from "@/types";
 
 export function OwnerMenu() {
   const { restaurant } = useAuth();
@@ -61,12 +61,15 @@ export function OwnerMenu() {
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2"><VegMark isVeg={item.is_veg} /><h3 className="truncate font-semibold text-stone-900">{item.name}</h3></div>
+                {item.is_bestseller && <span className="mt-1 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700">Bestseller</span>}
                 <p className="mt-0.5 line-clamp-2 text-xs text-stone-500">{item.description}</p>
                 <div className="mt-2 flex items-center justify-between">
                   <span className="font-semibold text-emerald-700">
-                    {hasMenuSizes(item)
-                      ? `Small ${formatMoney(Number(item.small_price), currency)} · Medium ${formatMoney(Number(item.medium_price), currency)} · Large ${formatMoney(Number(item.large_price), currency)}`
-                      : formatMoney(item.price, currency)}
+                    {item.size_option === "half_full" || item.half_price != null
+                      ? `Half ${formatMoney(Number(item.half_price), currency)} · Full ${formatMoney(Number(item.full_price), currency)}`
+                      : item.size_option === "small_medium_large" || item.small_price != null
+                        ? `Small ${formatMoney(Number(item.small_price), currency)} · Medium ${formatMoney(Number(item.medium_price), currency)} · Large ${formatMoney(Number(item.large_price), currency)}`
+                        : formatMoney(item.price, currency)}
                   </span>
                   <Badge color={item.is_available ? "green" : "stone"}>{item.is_available ? "Available" : "Off"}</Badge>
                 </div>
@@ -92,15 +95,20 @@ function MenuItemForm({ item, categories, restaurantId, currency, onClose, onSav
   const [name, setName] = useState(item?.name ?? "");
   const [description, setDescription] = useState(item?.description ?? "");
   const [price, setPrice] = useState(item ? String(item.price) : "");
-  const [hasSizes, setHasSizes] = useState(item ? hasMenuSizes(item) : false);
+  const [sizeOption, setSizeOption] = useState<MenuSizeOption>(
+    item?.size_option ?? (item?.half_price != null ? "half_full" : item?.small_price != null ? "small_medium_large" : "none")
+  );
   const [sizePrices, setSizePrices] = useState<Record<MenuSize, string>>({
     small: item?.small_price == null ? "" : String(item.small_price),
     medium: item?.medium_price == null ? "" : String(item.medium_price),
     large: item?.large_price == null ? "" : String(item.large_price),
+    half: item?.half_price == null ? "" : String(item.half_price),
+    full: item?.full_price == null ? "" : String(item.full_price),
   });
   const [categoryId, setCategoryId] = useState(item?.category_id ?? categories[0]?.id ?? "");
   const [isVeg, setIsVeg] = useState(item?.is_veg ?? true);
   const [isAvailable, setIsAvailable] = useState(item?.is_available ?? true);
+  const [isBestseller, setIsBestseller] = useState(item?.is_bestseller ?? false);
   const [imageUrl, setImageUrl] = useState(item?.image_url ?? "");
   const [saving, setSaving] = useState(false);
   const [showCatForm, setShowCatForm] = useState(false);
@@ -115,9 +123,10 @@ function MenuItemForm({ item, categories, restaurantId, currency, onClose, onSav
   async function save(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) { onNotify("Dish name is required", "error"); return; }
-    const enteredPrices = hasSizes ? MENU_SIZES.map((size) => sizePrices[size]) : [price];
+    const requiredSizes = sizeOption === "small_medium_large" ? MENU_SIZES : sizeOption === "half_full" ? HALF_FULL_SIZES : [];
+    const enteredPrices = sizeOption === "none" ? [price] : requiredSizes.map((size) => sizePrices[size]);
     if (enteredPrices.some((value) => value.trim() === "" || !Number.isFinite(Number(value)) || Number(value) < 0)) {
-      onNotify(hasSizes ? "Enter a valid price for all three sizes" : "Enter a valid price", "error");
+      onNotify(sizeOption === "none" ? "Enter a valid price" : "Enter valid prices for all selected sizes", "error");
       return;
     }
     const trimmedImageUrl = imageUrl.trim();
@@ -136,12 +145,16 @@ function MenuItemForm({ item, categories, restaurantId, currency, onClose, onSav
       category_id: categoryId || null,
       name: name.trim(),
       description: description.trim() || null,
-      price: hasSizes ? Number(sizePrices.small) : Number(price),
-      small_price: hasSizes ? Number(sizePrices.small) : null,
-      medium_price: hasSizes ? Number(sizePrices.medium) : null,
-      large_price: hasSizes ? Number(sizePrices.large) : null,
+      price: sizeOption === "small_medium_large" ? Number(sizePrices.small) : sizeOption === "half_full" ? Number(sizePrices.half) : Number(price),
+      size_option: sizeOption,
+      small_price: sizeOption === "small_medium_large" ? Number(sizePrices.small) : null,
+      medium_price: sizeOption === "small_medium_large" ? Number(sizePrices.medium) : null,
+      large_price: sizeOption === "small_medium_large" ? Number(sizePrices.large) : null,
+      half_price: sizeOption === "half_full" ? Number(sizePrices.half) : null,
+      full_price: sizeOption === "half_full" ? Number(sizePrices.full) : null,
       is_veg: isVeg,
       is_available: isAvailable,
+      is_bestseller: isBestseller,
       image_url: trimmedImageUrl || null,
     };
     const { error } = item ? await supabase.from("menu_items").update(payload).eq("id", item.id) : await supabase.from("menu_items").insert(payload);
@@ -157,15 +170,16 @@ function MenuItemForm({ item, categories, restaurantId, currency, onClose, onSav
         <Field label="Food image URL (optional)"><Input type="url" value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} placeholder="https://example.com/food-image.jpg" /></Field>
         <Field label="Description"><Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} placeholder="Short description of the dish" /></Field>
         <Field label="Dish sizes">
-          <div className="flex gap-5">
-            <label className="flex cursor-pointer items-center gap-2 text-sm"><input type="radio" checked={!hasSizes} onChange={() => setHasSizes(false)} className="accent-emerald-600" /> None (single price)</label>
-            <label className="flex cursor-pointer items-center gap-2 text-sm"><input type="radio" checked={hasSizes} onChange={() => setHasSizes(true)} className="accent-emerald-600" /> Small, Medium, Large</label>
+          <div className="flex flex-wrap gap-5">
+            <label className="flex cursor-pointer items-center gap-2 text-sm"><input type="radio" checked={sizeOption === "none"} onChange={() => setSizeOption("none")} className="accent-emerald-600" /> None (single price)</label>
+            <label className="flex cursor-pointer items-center gap-2 text-sm"><input type="radio" checked={sizeOption === "small_medium_large"} onChange={() => setSizeOption("small_medium_large")} className="accent-emerald-600" /> Small, Medium, Large</label>
+            <label className="flex cursor-pointer items-center gap-2 text-sm"><input type="radio" checked={sizeOption === "half_full"} onChange={() => setSizeOption("half_full")} className="accent-emerald-600" /> Half, Full</label>
           </div>
         </Field>
-        <div className={hasSizes ? "grid grid-cols-1 gap-3" : "grid grid-cols-2 gap-3"}>
-          {hasSizes ? (
-            <div className="grid grid-cols-3 gap-3">
-              {MENU_SIZES.map((size) => (
+        <div className={sizeOption === "none" ? "grid grid-cols-2 gap-3" : "grid grid-cols-1 gap-3"}>
+          {sizeOption !== "none" ? (
+            <div className={`grid gap-3 ${sizeOption === "half_full" ? "grid-cols-2" : "grid-cols-3"}`}>
+              {(sizeOption === "half_full" ? HALF_FULL_SIZES : MENU_SIZES).map((size) => (
                 <Field key={size} label={`${menuSizeLabel(size)} (${currency})`}>
                   <Input type="number" step="0.01" min="0" value={sizePrices[size]} onChange={(e) => setSizePrices((prices) => ({ ...prices, [size]: e.target.value }))} placeholder="0.00" />
                 </Field>
@@ -191,6 +205,7 @@ function MenuItemForm({ item, categories, restaurantId, currency, onClose, onSav
           <label className="flex cursor-pointer items-center gap-2 text-sm"><input type="radio" checked={isVeg} onChange={() => setIsVeg(true)} className="accent-emerald-600" /><VegMark isVeg /> Veg</label>
           <label className="flex cursor-pointer items-center gap-2 text-sm"><input type="radio" checked={!isVeg} onChange={() => setIsVeg(false)} className="accent-red-600" /><VegMark isVeg={false} /> Non-veg</label>
           <label className="flex cursor-pointer items-center gap-2 text-sm"><input type="checkbox" checked={isAvailable} onChange={(e) => setIsAvailable(e.target.checked)} className="accent-emerald-600" /> Available</label>
+          <label className="flex cursor-pointer items-center gap-2 text-sm"><input type="checkbox" checked={isBestseller} onChange={(e) => setIsBestseller(e.target.checked)} className="accent-amber-600" /> Bestseller</label>
         </div>
         <div className="flex justify-end gap-2 pt-2">
           <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
