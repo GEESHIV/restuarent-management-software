@@ -8,7 +8,8 @@ import { Modal } from "@/components/Modal";
 import { Badge, Button, EmptyState, Field, Input, Select, Textarea, VegMark } from "@/components/ui";
 import { useToast } from "@/components/Toast";
 import { formatMoney } from "@/lib/format";
-import type { Category, MenuItem } from "@/types";
+import { hasMenuSizes, MENU_SIZES, menuSizeLabel } from "@/lib/menuPricing";
+import type { Category, MenuItem, MenuSize } from "@/types";
 
 export function OwnerMenu() {
   const { restaurant } = useAuth();
@@ -62,7 +63,11 @@ export function OwnerMenu() {
                 <div className="flex items-center gap-2"><VegMark isVeg={item.is_veg} /><h3 className="truncate font-semibold text-stone-900">{item.name}</h3></div>
                 <p className="mt-0.5 line-clamp-2 text-xs text-stone-500">{item.description}</p>
                 <div className="mt-2 flex items-center justify-between">
-                  <span className="font-semibold text-emerald-700">{formatMoney(item.price, currency)}</span>
+                  <span className="font-semibold text-emerald-700">
+                    {hasMenuSizes(item)
+                      ? `Small ${formatMoney(Number(item.small_price), currency)} · Medium ${formatMoney(Number(item.medium_price), currency)} · Large ${formatMoney(Number(item.large_price), currency)}`
+                      : formatMoney(item.price, currency)}
+                  </span>
                   <Badge color={item.is_available ? "green" : "stone"}>{item.is_available ? "Available" : "Off"}</Badge>
                 </div>
                 <div className="mt-2 flex items-center gap-1">
@@ -87,6 +92,12 @@ function MenuItemForm({ item, categories, restaurantId, currency, onClose, onSav
   const [name, setName] = useState(item?.name ?? "");
   const [description, setDescription] = useState(item?.description ?? "");
   const [price, setPrice] = useState(item ? String(item.price) : "");
+  const [hasSizes, setHasSizes] = useState(item ? hasMenuSizes(item) : false);
+  const [sizePrices, setSizePrices] = useState<Record<MenuSize, string>>({
+    small: item?.small_price == null ? "" : String(item.small_price),
+    medium: item?.medium_price == null ? "" : String(item.medium_price),
+    large: item?.large_price == null ? "" : String(item.large_price),
+  });
   const [categoryId, setCategoryId] = useState(item?.category_id ?? categories[0]?.id ?? "");
   const [isVeg, setIsVeg] = useState(item?.is_veg ?? true);
   const [isAvailable, setIsAvailable] = useState(item?.is_available ?? true);
@@ -103,7 +114,12 @@ function MenuItemForm({ item, categories, restaurantId, currency, onClose, onSav
   }
   async function save(e: React.FormEvent) {
     e.preventDefault();
-    if (!name.trim() || !price) { onNotify("Name and price are required", "error"); return; }
+    if (!name.trim()) { onNotify("Dish name is required", "error"); return; }
+    const enteredPrices = hasSizes ? MENU_SIZES.map((size) => sizePrices[size]) : [price];
+    if (enteredPrices.some((value) => value.trim() === "" || !Number.isFinite(Number(value)) || Number(value) < 0)) {
+      onNotify(hasSizes ? "Enter a valid price for all three sizes" : "Enter a valid price", "error");
+      return;
+    }
     const trimmedImageUrl = imageUrl.trim();
     if (trimmedImageUrl) {
       try {
@@ -120,7 +136,10 @@ function MenuItemForm({ item, categories, restaurantId, currency, onClose, onSav
       category_id: categoryId || null,
       name: name.trim(),
       description: description.trim() || null,
-      price: Number(price),
+      price: hasSizes ? Number(sizePrices.small) : Number(price),
+      small_price: hasSizes ? Number(sizePrices.small) : null,
+      medium_price: hasSizes ? Number(sizePrices.medium) : null,
+      large_price: hasSizes ? Number(sizePrices.large) : null,
       is_veg: isVeg,
       is_available: isAvailable,
       image_url: trimmedImageUrl || null,
@@ -137,8 +156,24 @@ function MenuItemForm({ item, categories, restaurantId, currency, onClose, onSav
         <Field label="Dish name"><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Butter Paneer" /></Field>
         <Field label="Food image URL (optional)"><Input type="url" value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} placeholder="https://example.com/food-image.jpg" /></Field>
         <Field label="Description"><Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} placeholder="Short description of the dish" /></Field>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label={`Price (${currency})`}><Input type="number" step="0.01" min="0" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="0.00" /></Field>
+        <Field label="Dish sizes">
+          <div className="flex gap-5">
+            <label className="flex cursor-pointer items-center gap-2 text-sm"><input type="radio" checked={!hasSizes} onChange={() => setHasSizes(false)} className="accent-emerald-600" /> None (single price)</label>
+            <label className="flex cursor-pointer items-center gap-2 text-sm"><input type="radio" checked={hasSizes} onChange={() => setHasSizes(true)} className="accent-emerald-600" /> Small, Medium, Large</label>
+          </div>
+        </Field>
+        <div className={hasSizes ? "grid grid-cols-1 gap-3" : "grid grid-cols-2 gap-3"}>
+          {hasSizes ? (
+            <div className="grid grid-cols-3 gap-3">
+              {MENU_SIZES.map((size) => (
+                <Field key={size} label={`${menuSizeLabel(size)} (${currency})`}>
+                  <Input type="number" step="0.01" min="0" value={sizePrices[size]} onChange={(e) => setSizePrices((prices) => ({ ...prices, [size]: e.target.value }))} placeholder="0.00" />
+                </Field>
+              ))}
+            </div>
+          ) : (
+            <Field label={`Price (${currency})`}><Input type="number" step="0.01" min="0" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="0.00" /></Field>
+          )}
           <Field label="Category">
             <div className="flex gap-2">
               <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className="flex-1">{categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Select>

@@ -2,11 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ShoppingCart, Plus, Minus, ArrowLeft, CheckCircle2, ChefHat, Flame, Utensils, Clock, Home, Receipt } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { Button, VegMark, EmptyState } from "@/components/ui";
+import { Button, VegMark, EmptyState, Select } from "@/components/ui";
 import { useToast } from "@/components/Toast";
 import { computeTotals, formatMoney, timeAgo } from "@/lib/format";
 import { ORDER_STATUS_LABEL } from "@/lib/status";
-import type { MenuItem, Category, Restaurant, RestaurantTable, Order, OrderItem } from "@/types";
+import { getMenuItemPrice, hasMenuSizes, MENU_SIZES, menuSizeLabel } from "@/lib/menuPricing";
+import type { MenuItem, Category, Restaurant, RestaurantTable, Order, OrderItem, MenuSize } from "@/types";
 
 export function CustomerMenu() {
   const { tableId } = useParams();
@@ -17,7 +18,8 @@ export function CustomerMenu() {
   const [menu, setMenu] = useState<MenuItem[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
-  const [cart, setCart] = useState<Record<string, { item: MenuItem; qty: number; note: string }>>({});
+  const [cart, setCart] = useState<Record<string, { item: MenuItem; qty: number; note: string; size: MenuSize | null }>>({});
+  const [selectedSizes, setSelectedSizes] = useState<Record<string, MenuSize>>({});
   const [catFilter, setCatFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [placing, setPlacing] = useState(false);
@@ -43,11 +45,18 @@ export function CustomerMenu() {
 
   const currency = restaurant?.currency ?? "₹";
   const filtered = menu.filter((m) => m.is_available && (catFilter === "all" || m.category_id === catFilter) && m.name.toLowerCase().includes(search.toLowerCase()));
-  const subtotal = Object.values(cart).reduce((s, { item, qty }) => s + Number(item.price) * qty, 0);
+  const subtotal = Object.values(cart).reduce((s, { item, qty, size }) => s + getMenuItemPrice(item, size) * qty, 0);
   const totals = computeTotals(subtotal, restaurant?.gst_enabled ? restaurant.gst_percentage : 0, restaurant?.service_charge_percentage ?? 0);
   const totalItems = Object.values(cart).reduce((s, c) => s + c.qty, 0);
 
-  function addToCart(item: MenuItem) { setCart((c) => { const ex = c[item.id]; return { ...c, [item.id]: { item, qty: (ex?.qty ?? 0) + 1, note: ex?.note ?? "" } }; }); }
+  function addToCart(item: MenuItem) {
+    const size = hasMenuSizes(item) ? selectedSizes[item.id] ?? "small" : null;
+    setCart((c) => { const ex = c[item.id]; return { ...c, [item.id]: { item, qty: (ex?.qty ?? 0) + 1, note: ex?.note ?? "", size } }; });
+  }
+  function changeSize(item: MenuItem, size: MenuSize) {
+    setSelectedSizes((sizes) => ({ ...sizes, [item.id]: size }));
+    setCart((c) => c[item.id] ? { ...c, [item.id]: { ...c[item.id], size } } : c);
+  }
   function changeQty(item: MenuItem, delta: number) {
     setCart((c) => { const ex = c[item.id]; if (!ex) return c; const qty = ex.qty + delta; if (qty <= 0) { const { [item.id]: _, ...rest } = c; return rest; } return { ...c, [item.id]: { ...ex, qty } }; });
   }
@@ -66,9 +75,10 @@ export function CustomerMenu() {
       total: totals.total, item_count: totalItems, payment_status: "unpaid",
     });
     if (error) { setPlacing(false); notify(error.message, "error"); return; }
-    const newItems = Object.values(cart).map(({ item, qty, note }) => ({
+    const newItems = Object.values(cart).map(({ item, qty, note, size }) => ({
       order_id: newOrderId, restaurant_id: restaurant.id, menu_item_id: item.id,
-      name: item.name, price: Number(item.price), quantity: qty, is_veg: item.is_veg, emoji: item.emoji,
+      name: size ? `${item.name} (${menuSizeLabel(size)})` : item.name,
+      price: getMenuItemPrice(item, size), item_size: size, quantity: qty, is_veg: item.is_veg, emoji: item.emoji,
       special_instructions: note || null, status: "pending" as const,
     }));
     const { error: ie } = await supabase.from("order_items").insert(newItems);
@@ -113,7 +123,21 @@ export function CustomerMenu() {
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2"><VegMark isVeg={item.is_veg} /><p className="truncate font-medium text-stone-900">{item.name}</p></div>
                 {item.description && <p className="mt-0.5 line-clamp-1 text-xs text-stone-500">{item.description}</p>}
-                <p className="mt-1 text-sm font-semibold text-emerald-700">{formatMoney(item.price, currency)}</p>
+                <p className="mt-1 text-sm font-semibold text-emerald-700">
+                  {hasMenuSizes(item) ? `From ${formatMoney(getMenuItemPrice(item, "small"), currency)}` : formatMoney(item.price, currency)}
+                </p>
+                {hasMenuSizes(item) && (
+                  <Select
+                    value={inCart?.size ?? selectedSizes[item.id] ?? "small"}
+                    onChange={(e) => changeSize(item, e.target.value as MenuSize)}
+                    className="mt-1.5 py-1.5 text-xs"
+                    aria-label={`Choose size for ${item.name}`}
+                  >
+                    {MENU_SIZES.map((size) => (
+                      <option key={size} value={size}>{menuSizeLabel(size)} — {formatMoney(getMenuItemPrice(item, size), currency)}</option>
+                    ))}
+                  </Select>
+                )}
                 {inCart && <input value={inCart.note} onChange={(e) => setNote(item, e.target.value)} placeholder="Special instruction…" className="mt-1.5 w-full rounded-md border border-stone-200 px-2 py-1 text-xs outline-none focus:border-emerald-400" />}
               </div>
               {inCart ? (

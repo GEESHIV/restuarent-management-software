@@ -15,6 +15,7 @@ export type OrderStatus =
 export type ItemStatus = "pending" | "accepted" | "preparing" | "ready" | "served";
 export type PaymentStatus = "unpaid" | "paid";
 export type PaymentMethod = "cash" | "upi" | "card";
+export type MenuSize = "small" | "medium" | "large";
 
 export interface Restaurant {
   id: string;
@@ -57,6 +58,9 @@ export interface MenuItem {
   name: string;
   description: string | null;
   price: number;
+  small_price: number | null;
+  medium_price: number | null;
+  large_price: number | null;
   is_veg: boolean;
   is_available: boolean;
   image_url: string | null;
@@ -109,6 +113,7 @@ export interface OrderItem {
   menu_item_id: string | null;
   name: string;
   price: number;
+  item_size: MenuSize | null;
   quantity: number;
   is_veg: boolean;
   emoji: string;

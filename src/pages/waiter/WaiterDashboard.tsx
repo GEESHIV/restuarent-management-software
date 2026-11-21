@@ -6,11 +6,12 @@ import { useRealtimeQuery } from "@/lib/useRealtime";
 import { PageHeader } from "@/components/DashboardLayout";
 import { Modal } from "@/components/Modal";
 import { QrCard } from "@/components/QrCard";
-import { Badge, Button, EmptyState, Field, Textarea, VegMark } from "@/components/ui";
+import { Badge, Button, EmptyState, Field, Textarea, VegMark, Select } from "@/components/ui";
 import { useToast } from "@/components/Toast";
 import { TABLE_STATUS_LABEL, TABLE_STATUS_COLOR, ORDER_STATUS_LABEL, ORDER_STATUS_COLOR } from "@/lib/status";
 import { formatMoney, computeTotals, timeAgo, elapsedMin } from "@/lib/format";
-import type { MenuItem, Order, OrderItem, Restaurant, RestaurantTable } from "@/types";
+import { getMenuItemPrice, hasMenuSizes, MENU_SIZES, menuSizeLabel } from "@/lib/menuPricing";
+import type { MenuItem, MenuSize, Order, OrderItem, Restaurant, RestaurantTable } from "@/types";
 
 export function WaiterTables() {
   const { restaurant } = useAuth();
@@ -71,7 +72,8 @@ function TakeOrderModal({ table, restaurantId, currency, gstPercentage, serviceP
   table: RestaurantTable; restaurantId: string; currency: string; gstPercentage: number; servicePercentage: number; menu: MenuItem[]; existingOrder: Order | null; onClose: () => void; onSent: () => void;
 }) {
   const { notify } = useToast();
-  const [cart, setCart] = useState<Record<string, { item: MenuItem; qty: number; note: string }>>({});
+  const [cart, setCart] = useState<Record<string, { item: MenuItem; qty: number; note: string; size: MenuSize | null }>>({});
+  const [selectedSizes, setSelectedSizes] = useState<Record<string, MenuSize>>({});
   const [instructions, setInstructions] = useState("");
   const [catFilter, setCatFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
@@ -88,11 +90,18 @@ function TakeOrderModal({ table, restaurantId, currency, gstPercentage, serviceP
   }, [menu]);
 
   const filteredMenu = menu.filter((m) => m.is_available && (catFilter === "all" || m.category_id === catFilter) && m.name.toLowerCase().includes(search.toLowerCase()));
-  const subtotal = Object.values(cart).reduce((s, { item, qty }) => s + Number(item.price) * qty, 0);
+  const subtotal = Object.values(cart).reduce((s, { item, qty, size }) => s + getMenuItemPrice(item, size) * qty, 0);
   const totals = computeTotals(subtotal, gstPercentage, servicePercentage);
   const totalItems = Object.values(cart).reduce((s, c) => s + c.qty, 0);
 
-  function addToCart(item: MenuItem) { setCart((c) => { const ex = c[item.id]; return { ...c, [item.id]: { item, qty: (ex?.qty ?? 0) + 1, note: ex?.note ?? "" } }; }); }
+  function addToCart(item: MenuItem) {
+    const size = hasMenuSizes(item) ? selectedSizes[item.id] ?? "small" : null;
+    setCart((c) => { const ex = c[item.id]; return { ...c, [item.id]: { item, qty: (ex?.qty ?? 0) + 1, note: ex?.note ?? "", size } }; });
+  }
+  function changeSize(item: MenuItem, size: MenuSize) {
+    setSelectedSizes((sizes) => ({ ...sizes, [item.id]: size }));
+    setCart((c) => c[item.id] ? { ...c, [item.id]: { ...c[item.id], size } } : c);
+  }
   function changeQty(item: MenuItem, delta: number) {
     setCart((c) => { const ex = c[item.id]; if (!ex) return c; const qty = ex.qty + delta; if (qty <= 0) { const { [item.id]: _, ...rest } = c; return rest; } return { ...c, [item.id]: { ...ex, qty } }; });
   }
@@ -105,7 +114,7 @@ function TakeOrderModal({ table, restaurantId, currency, gstPercentage, serviceP
       let orderId: string;
       if (existingOrder) {
         orderId = existingOrder.id;
-        const newItems = Object.values(cart).map(({ item, qty, note }) => ({ order_id: orderId, restaurant_id: restaurantId, menu_item_id: item.id, name: item.name, price: Number(item.price), quantity: qty, is_veg: item.is_veg, emoji: item.emoji, special_instructions: note || null, status: "pending" as const }));
+        const newItems = Object.values(cart).map(({ item, qty, note, size }) => ({ order_id: orderId, restaurant_id: restaurantId, menu_item_id: item.id, name: size ? `${item.name} (${menuSizeLabel(size)})` : item.name, price: getMenuItemPrice(item, size), item_size: size, quantity: qty, is_veg: item.is_veg, emoji: item.emoji, special_instructions: note || null, status: "pending" as const }));
         const { error: itemErr } = await supabase.from("order_items").insert(newItems);
         if (itemErr) throw itemErr;
         const { data: allItems } = await supabase.from("order_items").select("price, quantity").eq("order_id", orderId);
@@ -117,7 +126,7 @@ function TakeOrderModal({ table, restaurantId, currency, gstPercentage, serviceP
         const { data: newOrder, error: ordErr } = await supabase.from("orders").insert({ restaurant_id: restaurantId, table_id: table.id, order_type: "dine_in", order_channel: "waiter", status: "pending", special_instructions: instructions.trim() || null, subtotal: totals.subtotal, tax_amount: totals.tax_amount, service_charge: totals.service_charge, total: totals.total, item_count: totalItems, payment_status: "unpaid" }).select("id").single();
         if (ordErr) throw ordErr;
         orderId = newOrder.id;
-        const newItems = Object.values(cart).map(({ item, qty, note }) => ({ order_id: orderId, restaurant_id: restaurantId, menu_item_id: item.id, name: item.name, price: Number(item.price), quantity: qty, is_veg: item.is_veg, emoji: item.emoji, special_instructions: note || null, status: "pending" as const }));
+        const newItems = Object.values(cart).map(({ item, qty, note, size }) => ({ order_id: orderId, restaurant_id: restaurantId, menu_item_id: item.id, name: size ? `${item.name} (${menuSizeLabel(size)})` : item.name, price: getMenuItemPrice(item, size), item_size: size, quantity: qty, is_veg: item.is_veg, emoji: item.emoji, special_instructions: note || null, status: "pending" as const }));
         const { error: itemErr } = await supabase.from("order_items").insert(newItems);
         if (itemErr) throw itemErr;
         await supabase.from("restaurant_tables").update({ status: "occupied" }).eq("id", table.id);
@@ -141,7 +150,22 @@ function TakeOrderModal({ table, restaurantId, currency, gstPercentage, serviceP
               return (
                 <div key={item.id} className="flex items-center gap-3 rounded-xl border border-stone-200 p-3">
                   <span className="text-2xl">{item.emoji}</span>
-                  <div className="min-w-0 flex-1"><div className="flex items-center gap-2"><VegMark isVeg={item.is_veg} /><p className="truncate text-sm font-medium text-stone-900">{item.name}</p></div><p className="text-xs text-stone-500">{formatMoney(item.price, currency)}</p></div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2"><VegMark isVeg={item.is_veg} /><p className="truncate text-sm font-medium text-stone-900">{item.name}</p></div>
+                    <p className="text-xs text-stone-500">{formatMoney(getMenuItemPrice(item, inCart?.size ?? (hasMenuSizes(item) ? selectedSizes[item.id] ?? "small" : null)), currency)}</p>
+                    {hasMenuSizes(item) && (
+                      <Select
+                        value={inCart?.size ?? selectedSizes[item.id] ?? "small"}
+                        onChange={(e) => changeSize(item, e.target.value as MenuSize)}
+                        className="mt-1 py-1 text-xs"
+                        aria-label={`Choose size for ${item.name}`}
+                      >
+                        {MENU_SIZES.map((size) => (
+                          <option key={size} value={size}>{menuSizeLabel(size)} — {formatMoney(getMenuItemPrice(item, size), currency)}</option>
+                        ))}
+                      </Select>
+                    )}
+                  </div>
                   {inCart ? (
                     <div className="flex items-center gap-2">
                       <button onClick={() => changeQty(item, -1)} className="rounded-lg bg-stone-100 px-2 py-1 text-stone-700 hover:bg-stone-200"><Minus size={14} /></button>
@@ -161,9 +185,9 @@ function TakeOrderModal({ table, restaurantId, currency, gstPercentage, serviceP
               <div className="max-h-[260px] space-y-2 overflow-y-auto">
                 {existingItems.length > 0 && <p className="text-xs font-semibold uppercase text-stone-400">Already on this order</p>}
                 {existingItems.map((it) => <div key={it.id} className="flex items-center justify-between rounded-lg bg-white px-3 py-2 text-xs"><span className="text-stone-700">{it.emoji} {it.name} × {it.quantity}</span><span className="text-stone-500">{formatMoney(it.price * it.quantity, currency)}</span></div>)}
-                {Object.values(cart).map(({ item, qty, note }) => (
+                {Object.values(cart).map(({ item, qty, note, size }) => (
                   <div key={item.id} className="rounded-lg bg-white px-3 py-2">
-                    <div className="flex items-center justify-between text-sm"><span className="text-stone-900">{item.emoji} {item.name} × {qty}</span><span className="font-medium text-stone-900">{formatMoney(item.price * qty, currency)}</span></div>
+                    <div className="flex items-center justify-between text-sm"><span className="text-stone-900">{item.emoji} {item.name}{size ? ` (${menuSizeLabel(size)})` : ""} × {qty}</span><span className="font-medium text-stone-900">{formatMoney(getMenuItemPrice(item, size) * qty, currency)}</span></div>
                     <input value={note} onChange={(e) => setNote(item, e.target.value)} placeholder="Special instruction…" className="mt-1.5 w-full rounded-md border border-stone-200 px-2 py-1 text-xs outline-none focus:border-emerald-400" />
                   </div>
                 ))}
