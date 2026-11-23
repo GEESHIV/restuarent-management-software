@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from "@/lib/auth";
 import { ToastProvider } from "@/components/Toast";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { LoginPage } from "@/pages/LoginPage";
+import { ResetPasswordPage } from "@/pages/ResetPasswordPage";
 import { OrdersList } from "@/pages/OrdersList";
 import { OwnerOverview } from "@/pages/owner/OwnerOverview";
 import { OwnerMenu } from "@/pages/owner/OwnerMenu";
@@ -54,6 +55,7 @@ function AppRoutes() {
 
       {/* Login */}
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
 
       {/* Owner routes */}
       <Route path="/" element={<RequireAuth allow={["owner", "waiter", "kitchen"]}><RoleHome /></RequireAuth>} />
