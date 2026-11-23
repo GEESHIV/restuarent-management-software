@@ -20,7 +20,7 @@ export function OwnerMenu() {
     table: "menu_items", filterColumn: "restaurant_id", filterValue: rid,
     select: "*, category:categories(id, name)", orderBy: { column: "sort_order", ascending: true },
   });
-  const { data: categories } = useRealtimeQuery<Category>({
+  const { data: categories, refresh: refreshCategories } = useRealtimeQuery<Category>({
     table: "categories", filterColumn: "restaurant_id", filterValue: rid,
     orderBy: { column: "sort_order", ascending: true },
   });
@@ -83,14 +83,15 @@ export function OwnerMenu() {
           ))}
         </div>
       )}
-      {showForm && <MenuItemForm item={editing} categories={categories} restaurantId={rid!} currency={currency} onClose={() => setShowForm(false)} onSaved={() => { setShowForm(false); refresh(); }} onNotify={notify} />}
+      {showForm && <MenuItemForm item={editing} categories={categories} restaurantId={rid!} currency={currency} onClose={() => setShowForm(false)} onSaved={() => { setShowForm(false); refresh(); }} onCategoryAdded={refreshCategories} onNotify={notify} />}
     </div>
   );
 }
 
-function MenuItemForm({ item, categories, restaurantId, currency, onClose, onSaved, onNotify }: {
+function MenuItemForm({ item, categories, restaurantId, currency, onClose, onSaved, onCategoryAdded, onNotify }: {
   item: MenuItem | null; categories: Category[]; restaurantId: string; currency: string;
-  onClose: () => void; onSaved: () => void; onNotify: (m: string, t?: "success" | "error") => void;
+  onClose: () => void; onSaved: () => void; onCategoryAdded: () => Promise<void>;
+  onNotify: (m: string, t?: "success" | "error") => void;
 }) {
   const [name, setName] = useState(item?.name ?? "");
   const [description, setDescription] = useState(item?.description ?? "");
@@ -118,6 +119,7 @@ function MenuItemForm({ item, categories, restaurantId, currency, onClose, onSav
     if (!newCat.trim()) return;
     const { data, error } = await supabase.from("categories").insert({ restaurant_id: restaurantId, name: newCat.trim(), sort_order: 99 }).select("id, name").single();
     if (error) { onNotify(error.message, "error"); return; }
+    await onCategoryAdded();
     setCategoryId(data.id); setNewCat(""); setShowCatForm(false); onNotify("Category added", "success");
   }
   async function save(e: React.FormEvent) {

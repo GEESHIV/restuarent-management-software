@@ -9,10 +9,11 @@ export function useRealtime<T extends { id: string }>(opts: {
   table: string;
   filterColumn?: string;
   filterValue?: string;
+  enabled?: boolean;
   select?: string;
   orderBy?: { column: string; ascending?: boolean };
 }) {
-  const { table, filterColumn, filterValue, select = "*", orderBy } = opts;
+  const { table, filterColumn, filterValue, enabled = true, select = "*", orderBy } = opts;
   const [data, setData] = useState<T[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -33,7 +34,14 @@ export function useRealtime<T extends { id: string }>(opts: {
   }
 
   useEffect(() => {
-    refresh();
+    if (!enabled) {
+      setData([]);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    void refresh();
     const channel = supabase
       .channel(`rt_${table}_${filterValue ?? "all"}`)
       .on(
@@ -56,7 +64,7 @@ export function useRealtime<T extends { id: string }>(opts: {
       supabase.removeChannel(channel);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [table, filterColumn, filterValue, select]);
+  }, [table, filterColumn, filterValue, enabled, select]);
 
   return { data, loading, error, refresh };
 }

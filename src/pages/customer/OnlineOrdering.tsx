@@ -7,6 +7,7 @@ import { useToast } from "@/components/Toast";
 import { computeTotals, formatMoney, timeAgo } from "@/lib/format";
 import { ORDER_STATUS_LABEL } from "@/lib/status";
 import { getMenuItemPrice, getMenuSizes, hasMenuSizes, menuSizeLabel } from "@/lib/menuPricing";
+import { useRealtimeQuery } from "@/lib/useRealtime";
 import type { MenuItem, Category, Restaurant, Order, OrderItem, MenuSize } from "@/types";
 
 type OrderMode = "takeaway" | "delivery";
@@ -17,7 +18,13 @@ export function OnlineOrdering() {
   const { notify } = useToast();
   const [restaurant, setRestaurant] = useState<Restaurant | null>(null);
   const [menu, setMenu] = useState<MenuItem[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
+  const { data: categories } = useRealtimeQuery<Category>({
+    table: "categories",
+    filterColumn: "restaurant_id",
+    filterValue: restaurant?.id,
+    enabled: Boolean(restaurant?.id),
+    orderBy: { column: "sort_order", ascending: true },
+  });
   const [loading, setLoading] = useState(true);
   const [cart, setCart] = useState<Record<string, { item: MenuItem; qty: number; note: string; size: MenuSize | null }>>({});
   const [selectedSizes, setSelectedSizes] = useState<Record<string, MenuSize>>({});
@@ -35,11 +42,11 @@ export function OnlineOrdering() {
       if (!rest) { setLoading(false); return; }
       setRestaurant(rest as Restaurant);
       const rid = (rest as Restaurant).id;
-      const [{ data: cats }, { data: items }] = await Promise.all([
-        supabase.from("categories").select("*").eq("restaurant_id", rid).order("sort_order", { ascending: true }),
-        supabase.from("menu_items").select("*").eq("restaurant_id", rid).order("sort_order", { ascending: true }),
-      ]);
-      setCategories((cats as Category[]) ?? []);
+      const { data: items } = await supabase
+        .from("menu_items")
+        .select("*")
+        .eq("restaurant_id", rid)
+        .order("sort_order", { ascending: true });
       setMenu((items as MenuItem[]) ?? []);
       setLoading(false);
     })();
