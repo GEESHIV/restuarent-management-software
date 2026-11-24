@@ -26,6 +26,7 @@ export function OwnerSettings() {
     const { error } = await supabase.from("restaurants").update({
       name: f.name, address: f.address, phone: f.phone,
       upi_id: f.upi_id?.trim() || null, upi_name: f.upi_name?.trim() || null,
+      google_review_url: f.google_review_url?.trim() || null,
       gst_enabled: f.gst_enabled, gst_percentage: Number(f.gst_percentage) || 0,
       service_charge_percentage: Number(f.service_charge_percentage) || 0, currency: f.currency || "₹",
     }).eq("id", f.id);
@@ -56,6 +57,11 @@ export function OwnerSettings() {
               <Field label="UPI account name"><Input value={f.upi_name ?? ""} onChange={(e) => setForm({ ...f, upi_name: e.target.value })} placeholder="Name shown to customer" /></Field>
             </div>
             <p className="-mt-3 text-xs text-stone-500">Waiters can show customers an order-specific UPI QR code from the bill screen.</p>
+            <div className="flex items-center gap-2 border-b border-stone-100 pb-3 pt-2"><h2 className="font-display text-lg font-bold text-stone-900">Google Reviews</h2></div>
+            <Field label="Google review URL">
+              <Input type="url" value={f.google_review_url ?? ""} onChange={(e) => setForm({ ...f, google_review_url: e.target.value })} placeholder="https://g.page/r/…/review" />
+            </Field>
+            <p className="-mt-3 text-xs text-stone-500">After payment, the waiter can show this review QR code on the bill screen.</p>
             <div className="flex items-center gap-2 border-b border-stone-100 pb-3 pt-2"><h2 className="font-display text-lg font-bold text-stone-900">Tax & Charges</h2></div>
             <label className="flex cursor-pointer items-center gap-3">
               <input type="checkbox" checked={f.gst_enabled} onChange={(e) => setForm({ ...f, gst_enabled: e.target.checked })} className="h-5 w-5 accent-emerald-600" />

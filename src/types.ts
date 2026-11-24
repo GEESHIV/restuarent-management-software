@@ -26,6 +26,7 @@ export interface Restaurant {
   phone: string | null;
   upi_id: string | null;
   upi_name: string | null;
+  google_review_url: string | null;
   gst_enabled: boolean;
   gst_percentage: number;
   service_charge_percentage: number;
@@ -134,6 +135,17 @@ export interface Payment {
   amount: number;
   method: PaymentMethod;
   created_at: string;
+}
+
+export interface WaiterCall {
+  id: string;
+  restaurant_id: string;
+  table_id: string;
+  order_id: string;
+  status: "pending" | "acknowledged";
+  created_at: string;
+  acknowledged_at: string | null;
+  table?: Pick<RestaurantTable, "id" | "name"> | null;
 }
 
 export interface Expense {

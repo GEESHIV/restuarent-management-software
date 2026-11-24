@@ -6,6 +6,8 @@ import { useRealtimeQuery } from "@/lib/useRealtime";
 import { PageHeader, StatCard } from "@/components/DashboardLayout";
 import { Badge, Button, EmptyState } from "@/components/ui";
 import { useToast } from "@/components/Toast";
+import { AlertSoundButton } from "@/components/AlertSoundButton";
+import { useRealtimeAlerts } from "@/lib/useRealtimeAlerts";
 import { ORDER_STATUS_LABEL, ORDER_STATUS_COLOR, ITEM_STATUS_LABEL } from "@/lib/status";
 import { formatMoney, elapsedMin, timeAgo } from "@/lib/format";
 import type { Order, OrderItem, ItemStatus } from "@/types";
@@ -15,7 +17,7 @@ export function KitchenDashboard() {
   const rid = restaurant?.id;
   const currency = restaurant?.currency ?? "₹";
   const { notify } = useToast();
-  const { data: orders } = useRealtimeQuery<Order>({
+  const { data: orders, loading: ordersLoading } = useRealtimeQuery<Order>({
     table: "orders", filterColumn: "restaurant_id", filterValue: rid,
     select: "*, table:restaurant_tables(id,name)", orderBy: { column: "created_at", ascending: true },
   });
@@ -26,6 +28,14 @@ export function KitchenDashboard() {
     () => orders.filter((o) => ["pending", "accepted", "preparing", "ready"].includes(o.status)),
     [orders]
   );
+  const alertEvents = useMemo(
+    () => orders.filter((order) => order.status === "pending").map((order) => ({
+      id: `order-${order.id}`,
+      message: `New order received${order.table ? ` from Table ${order.table.name}` : ""}`,
+    })),
+    [orders]
+  );
+  const { soundEnabled, turnSoundOn } = useRealtimeAlerts(alertEvents, ordersLoading);
   const pending = activeOrders.filter((o) => o.status === "pending");
   const preparing = activeOrders.filter((o) => o.status === "accepted" || o.status === "preparing");
   const ready = activeOrders.filter((o) => o.status === "ready");
@@ -82,6 +92,7 @@ export function KitchenDashboard() {
   return (
     <div>
       <PageHeader title="Kitchen" subtitle={`${activeOrders.length} active tickets · ${pending.length} new, ${preparing.length} cooking, ${ready.length} ready`} />
+      <div className="mb-4 flex justify-end"><AlertSoundButton enabled={soundEnabled} onEnable={turnSoundOn} /></div>
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label="New orders" value={String(pending.length)} icon={<Bell size={18} />} accent="amber" />
         <StatCard label="Cooking" value={String(preparing.length)} icon={<Flame size={18} />} accent="red" />

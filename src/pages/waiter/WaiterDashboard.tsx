@@ -1,17 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
-import { Table2, Plus, Receipt, Send, Wallet, Share2, Clock, CheckCircle2, ShoppingCart, Minus, ChefHat } from "lucide-react";
+import { Table2, Plus, Receipt, Send, Wallet, Share2, Clock, CheckCircle2, ShoppingCart, Minus, ChefHat, Bell, PhoneCall } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
 import { useRealtimeQuery } from "@/lib/useRealtime";
 import { PageHeader } from "@/components/DashboardLayout";
 import { Modal } from "@/components/Modal";
 import { QrCard } from "@/components/QrCard";
+import { AlertSoundButton } from "@/components/AlertSoundButton";
 import { Badge, Button, EmptyState, Field, Textarea, VegMark, Select } from "@/components/ui";
 import { useToast } from "@/components/Toast";
 import { TABLE_STATUS_LABEL, TABLE_STATUS_COLOR, ORDER_STATUS_LABEL, ORDER_STATUS_COLOR } from "@/lib/status";
 import { formatMoney, computeTotals, timeAgo, elapsedMin } from "@/lib/format";
 import { getMenuItemPrice, getMenuSizes, hasMenuSizes, menuSizeLabel } from "@/lib/menuPricing";
-import type { MenuItem, MenuSize, Order, OrderItem, Restaurant, RestaurantTable } from "@/types";
+import { useRealtimeAlerts } from "@/lib/useRealtimeAlerts";
+import type { MenuItem, MenuSize, Order, OrderItem, Restaurant, RestaurantTable, WaiterCall } from "@/types";
 
 export function WaiterTables() {
   const { restaurant } = useAuth();
@@ -19,11 +21,24 @@ export function WaiterTables() {
   const currency = restaurant?.currency ?? "₹";
   const { notify } = useToast();
   const { data: tables } = useRealtimeQuery<RestaurantTable>({ table: "restaurant_tables", filterColumn: "restaurant_id", filterValue: rid, orderBy: { column: "name", ascending: true } });
-  const { data: orders } = useRealtimeQuery<Order>({ table: "orders", filterColumn: "restaurant_id", filterValue: rid, select: "*, table:restaurant_tables(id,name)", orderBy: { column: "created_at", ascending: false } });
+  const { data: orders, loading: ordersLoading } = useRealtimeQuery<Order>({ table: "orders", filterColumn: "restaurant_id", filterValue: rid, select: "*, table:restaurant_tables(id,name)", orderBy: { column: "created_at", ascending: false } });
+  const { data: calls, loading: callsLoading } = useRealtimeQuery<WaiterCall>({ table: "waiter_calls", filterColumn: "restaurant_id", filterValue: rid, enabled: Boolean(rid), select: "*, table:restaurant_tables(id,name)", orderBy: { column: "created_at", ascending: false } });
   const { data: menu } = useRealtimeQuery<MenuItem>({ table: "menu_items", filterColumn: "restaurant_id", filterValue: rid, select: "*, category:categories(id,name)", orderBy: { column: "sort_order", ascending: true } });
 
   const [orderTable, setOrderTable] = useState<RestaurantTable | null>(null);
   const [billOrder, setBillOrder] = useState<Order | null>(null);
+  const pendingCalls = calls.filter((call) => call.status === "pending");
+  const alertEvents = useMemo(() => [
+    ...orders.filter((order) => order.status === "pending").map((order) => ({
+      id: `order-${order.id}`,
+      message: `New order received${order.table ? ` from Table ${order.table.name}` : ""}`,
+    })),
+    ...pendingCalls.map((call) => ({
+      id: `call-${call.id}`,
+      message: `Table ${call.table?.name ?? "unknown"} is calling for a waiter`,
+    })),
+  ], [orders, pendingCalls]);
+  const { soundEnabled, turnSoundOn } = useRealtimeAlerts(alertEvents, ordersLoading || callsLoading);
 
   const activeOrderByTable = useMemo(() => {
     const map: Record<string, Order> = {};
@@ -33,9 +48,34 @@ export function WaiterTables() {
 
   const counts = { available: tables.filter((t) => t.status === "available").length, occupied: tables.filter((t) => t.status === "occupied").length, bill_pending: tables.filter((t) => t.status === "bill_pending").length };
 
+  async function acknowledgeCall(call: WaiterCall) {
+    const { error } = await supabase.from("waiter_calls").update({
+      status: "acknowledged",
+      acknowledged_at: new Date().toISOString(),
+    }).eq("id", call.id);
+    if (error) notify(error.message, "error");
+  }
+
   return (
     <div>
       <PageHeader title="Tables" subtitle={`${tables.length} tables · ${counts.available} available, ${counts.occupied} occupied, ${counts.bill_pending} bill pending`} />
+      <div className="mb-4 flex justify-end"><AlertSoundButton enabled={soundEnabled} onEnable={turnSoundOn} /></div>
+      {pendingCalls.length > 0 && (
+        <div className="mb-5 rounded-2xl border border-amber-300 bg-amber-50 p-4">
+          <h2 className="mb-3 flex items-center gap-2 font-semibold text-amber-900"><Bell size={18} /> Customers calling for a waiter</h2>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {pendingCalls.map((call) => (
+              <div key={call.id} className="flex items-center justify-between gap-3 rounded-xl bg-white p-3">
+                <div>
+                  <p className="flex items-center gap-2 font-semibold text-stone-900"><PhoneCall size={15} className="text-amber-600" /> Table {call.table?.name ?? "—"}</p>
+                  <p className="text-xs text-stone-500">{timeAgo(call.created_at)}</p>
+                </div>
+                <Button size="sm" onClick={() => acknowledgeCall(call)}>Acknowledge</Button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       {tables.length === 0 ? <EmptyState icon={<Table2 size={40} />} title="No tables" subtitle="Ask the owner to add tables." /> : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {tables.map((t) => {
@@ -63,7 +103,7 @@ export function WaiterTables() {
         </div>
       )}
       {orderTable && <TakeOrderModal table={orderTable} restaurantId={rid!} currency={currency} gstPercentage={restaurant?.gst_percentage ?? 0} servicePercentage={restaurant?.service_charge_percentage ?? 0} menu={menu} existingOrder={activeOrderByTable[orderTable.id] ?? null} onClose={() => setOrderTable(null)} onSent={() => { setOrderTable(null); notify("Order sent to kitchen", "success"); }} />}
-      {billOrder && <BillModal order={billOrder} restaurantId={rid!} currency={currency} restaurant={restaurant!} onClose={() => setBillOrder(null)} onPaid={() => { setBillOrder(null); notify("Payment recorded", "success"); }} />}
+      {billOrder && <BillModal order={billOrder} restaurantId={rid!} currency={currency} restaurant={restaurant!} onClose={() => setBillOrder(null)} onPaid={() => notify("Payment recorded", "success")} />}
     </div>
   );
 }
@@ -217,6 +257,7 @@ export function BillModal({ order, restaurantId, currency, restaurant, onClose, 
   const [loading, setLoading] = useState(true);
   const [method, setMethod] = useState<"cash" | "upi" | "card">("cash");
   const [paying, setPaying] = useState(false);
+  const [paymentRecorded, setPaymentRecorded] = useState(false);
   const upiId = restaurant.upi_id?.trim() ?? "";
   const upiName = restaurant.upi_name?.trim() ?? "";
   const upiUri = upiId && upiName
@@ -240,7 +281,7 @@ export function BillModal({ order, restaurantId, currency, restaurant, onClose, 
     const { error: ordErr } = await supabase.from("orders").update({ payment_status: "paid", payment_method: method, status: "completed" }).eq("id", order.id);
     if (ordErr) { setPaying(false); notify(ordErr.message, "error"); return; }
     if (order.table_id) await supabase.from("restaurant_tables").update({ status: "available" }).eq("id", order.table_id);
-    setPaying(false); onPaid();
+    setPaying(false); setPaymentRecorded(true); onPaid();
   }
 
   function shareWhatsApp() {
@@ -273,8 +314,15 @@ export function BillModal({ order, restaurantId, currency, restaurant, onClose, 
             <div className="flex justify-between border-t border-stone-300 pt-1 text-base font-bold text-stone-900"><span>Total</span><span>{formatMoney(order.total, currency)}</span></div>
           </div>
         </div>
-        {order.payment_status === "paid" ? (
-          <div className="flex items-center justify-center gap-2 rounded-xl bg-emerald-50 py-3 text-emerald-700"><CheckCircle2 size={20} /> Paid via {order.payment_method}</div>
+        {order.payment_status === "paid" || paymentRecorded ? (
+          <div className="space-y-3">
+            <div className="flex items-center justify-center gap-2 rounded-xl bg-emerald-50 py-3 text-emerald-700"><CheckCircle2 size={20} /> Paid via {order.payment_method ?? method}</div>
+            {restaurant.google_review_url?.trim() ? (
+              <QrCard url={restaurant.google_review_url.trim()} title="Enjoyed your visit?" subtitle="Scan to leave us a Google review" />
+            ) : (
+              <p className="rounded-xl bg-stone-50 p-3 text-center text-sm text-stone-500">Add a Google review URL in Owner Settings to show a review QR code here.</p>
+            )}
+          </div>
         ) : (
           <>
             <Field label="Payment method">
@@ -342,7 +390,7 @@ export function WaiterBills() {
           ))}
         </div>
       )}
-      {billOrder && <BillModal order={billOrder} restaurantId={rid!} currency={currency} restaurant={restaurant!} onClose={() => setBillOrder(null)} onPaid={() => { setBillOrder(null); notify("Payment recorded", "success"); }} />}
+      {billOrder && <BillModal order={billOrder} restaurantId={rid!} currency={currency} restaurant={restaurant!} onClose={() => setBillOrder(null)} onPaid={() => notify("Payment recorded", "success")} />}
     </div>
   );
 }

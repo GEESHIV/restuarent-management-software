@@ -5,6 +5,8 @@ import { useAuth } from "@/lib/auth";
 import { useRealtimeQuery } from "@/lib/useRealtime";
 import { PageHeader, StatCard } from "@/components/DashboardLayout";
 import { Badge, EmptyState } from "@/components/ui";
+import { AlertSoundButton } from "@/components/AlertSoundButton";
+import { useRealtimeAlerts } from "@/lib/useRealtimeAlerts";
 import { ORDER_STATUS_LABEL, ORDER_STATUS_COLOR } from "@/lib/status";
 import { formatMoney, timeAgo, isToday } from "@/lib/format";
 import type { Expense, Order, Payment } from "@/types";
@@ -13,7 +15,7 @@ export function OwnerOverview() {
   const { restaurant } = useAuth();
   const rid = restaurant?.id;
   const currency = restaurant?.currency ?? "₹";
-  const { data: orders } = useRealtimeQuery<Order>({
+  const { data: orders, loading: ordersLoading } = useRealtimeQuery<Order>({
     table: "orders",
     filterColumn: "restaurant_id",
     filterValue: rid,
@@ -27,6 +29,14 @@ export function OwnerOverview() {
     orderBy: { column: "created_at", ascending: false },
   });
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const alertEvents = useMemo(
+    () => orders.filter((order) => order.status === "pending").map((order) => ({
+      id: `order-${order.id}`,
+      message: `New order received${order.table ? ` from Table ${order.table.name}` : ""}`,
+    })),
+    [orders]
+  );
+  const { soundEnabled, turnSoundOn } = useRealtimeAlerts(alertEvents, ordersLoading);
 
   useEffect(() => {
     if (!rid) return;
@@ -53,6 +63,7 @@ export function OwnerOverview() {
   return (
     <div>
       <PageHeader title="Overview" subtitle={`Today's performance for ${restaurant?.name}`} />
+      <div className="mb-4 flex justify-end"><AlertSoundButton enabled={soundEnabled} onEnable={turnSoundOn} /></div>
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label="Today's Revenue" value={formatMoney(todaysRevenue, currency)} icon={<TrendingUp size={18} />} accent="emerald" hint={`${todaysOrders.filter((o) => o.payment_status === "paid").length} paid orders`} />
         <StatCard label="Today's Orders" value={String(todaysOrders.length)} icon={<Receipt size={18} />} accent="sky" hint={`Avg ${formatMoney(avgOrder, currency)}`} />

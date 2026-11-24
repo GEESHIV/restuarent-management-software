@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ShoppingCart, Plus, Minus, ArrowLeft, CheckCircle2, ChefHat, Flame, Utensils, Clock, Home, Receipt } from "lucide-react";
+import { ShoppingCart, Plus, Minus, ArrowLeft, CheckCircle2, ChefHat, Flame, Utensils, Clock, Home, Receipt, PhoneCall } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Button, VegMark, EmptyState, Select } from "@/components/ui";
 import { useToast } from "@/components/Toast";
@@ -178,9 +178,12 @@ export function CustomerMenu() {
 export function OrderTracking() {
   const { orderId, token } = useParams();
   const navigate = useNavigate();
+  const { notify } = useToast();
   const [order, setOrder] = useState<any>(null);
   const [items, setItems] = useState<OrderItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [callingWaiter, setCallingWaiter] = useState(false);
+  const [waiterCalled, setWaiterCalled] = useState(false);
 
   useEffect(() => {
     if (!orderId || !token) return;
@@ -227,6 +230,19 @@ export function OrderTracking() {
   const steps = ["pending", "accepted", "preparing", "ready", "served"];
   const currentIdx = steps.indexOf(order.status);
   const stepIcons = [<Clock size={18} key="0" />, <CheckCircle2 size={18} key="1" />, <Flame size={18} key="2" />, <Utensils size={18} key="3" />, <ChefHat size={18} key="4" />];
+
+  async function callWaiter() {
+    if (!orderId || !token || callingWaiter) return;
+    setCallingWaiter(true);
+    const { error } = await supabase.rpc("call_waiter", { p_order_id: orderId, p_token: token });
+    setCallingWaiter(false);
+    if (error) {
+      notify(error.message, "error");
+      return;
+    }
+    setWaiterCalled(true);
+    notify("A waiter has been notified", "success");
+  }
 
   return (
     <div className="min-h-screen bg-stone-50">
@@ -275,6 +291,13 @@ export function OrderTracking() {
         )}
 
         <div className="text-center">
+          {order.order_type === "dine_in" && order.payment_status !== "paid" && order.status !== "completed" && (
+            <div className="mb-4">
+              <Button onClick={callWaiter} disabled={callingWaiter || waiterCalled} variant={waiterCalled ? "secondary" : "outline"}>
+                <PhoneCall size={16} /> {callingWaiter ? "Calling…" : waiterCalled ? "Waiter notified" : "Call Waiter"}
+              </Button>
+            </div>
+          )}
           <Button variant="outline" onClick={() => navigate(`/menu/${orderId}`)}><ArrowLeft size={16} /> Back to menu</Button>
         </div>
       </div>
