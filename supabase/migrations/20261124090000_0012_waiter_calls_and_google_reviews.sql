@@ -78,8 +78,8 @@ BEGIN
 END;
 $$;
 
-REVOKE EXECUTE ON FUNCTION public.call_waiter(uuid, uuid) FROM PUBLIC, authenticated;
-GRANT EXECUTE ON FUNCTION public.call_waiter(uuid, uuid) TO anon;
+REVOKE EXECUTE ON FUNCTION public.call_waiter(uuid, uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.call_waiter(uuid, uuid) TO anon, authenticated;
 
 DO $$
 BEGIN
